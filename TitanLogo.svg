@@ -1,0 +1,94 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a0533;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d0221;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c084fc;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4f46e5;stop-opacity:0.3" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softglow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer ring -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)" stroke="url(#ringGrad)" stroke-width="1.5"/>
+
+  <!-- Inner decorative rings -->
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#7c3aed" stroke-width="0.5" stroke-opacity="0.4"/>
+  <circle cx="100" cy="100" r="70" fill="none" stroke="#4f46e5" stroke-width="0.3" stroke-opacity="0.3"/>
+
+  <!-- Corner accent marks -->
+  <line x1="100" y1="18" x2="100" y2="28" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+  <line x1="100" y1="172" x2="100" y2="182" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+  <line x1="18" y1="100" x2="28" y2="100" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+  <line x1="172" y1="100" x2="182" y2="100" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+
+  <!-- Diagonal accents -->
+  <line x1="32" y1="32" x2="39" y2="39" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="168" y1="32" x2="161" y2="39" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="32" y1="168" x2="39" y2="161" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  <line x1="168" y1="168" x2="161" y2="161" stroke="#7c3aed" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+
+  <!-- Glowing background circle for bolt -->
+  <circle cx="100" cy="92" r="38" fill="#7c3aed" fill-opacity="0.12" filter="url(#softglow)"/>
+
+  <!-- Lightning bolt — main icon -->
+  <polygon
+    points="112,54 88,96 104,96 88,134 116,88 100,88"
+    fill="url(#boltGrad)"
+    filter="url(#glow)"
+  />
+
+  <!-- Bolt highlight -->
+  <polygon
+    points="112,54 104,70 108,70 104,88 116,88 112,54"
+    fill="#e9d5ff"
+    fill-opacity="0.35"
+  />
+
+  <!-- T I T A N text -->
+  <text
+    x="100"
+    y="158"
+    text-anchor="middle"
+    font-family="'Arial Black', 'Arial', sans-serif"
+    font-weight="900"
+    font-size="18"
+    letter-spacing="8"
+    fill="#c084fc"
+    filter="url(#glow)"
+  >TITAN</text>
+
+  <!-- Powered by line -->
+  <text
+    x="100"
+    y="174"
+    text-anchor="middle"
+    font-family="Arial, sans-serif"
+    font-weight="400"
+    font-size="6.5"
+    letter-spacing="1.5"
+    fill="#7c3aed"
+    fill-opacity="0.8"
+  >POWERED BY SHIVANCHAL</text>
+
+</svg>
