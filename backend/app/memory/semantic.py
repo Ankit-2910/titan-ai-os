@@ -20,14 +20,16 @@ class SemanticMemory:
 
     async def _get_client(self) -> AsyncQdrantClient:
         if self._client is None:
-            kwargs = {
-                "host": settings.qdrant_host,
-                "port": settings.qdrant_port
-            }
             if settings.qdrant_api_key:
-                kwargs["api_key"] = settings.qdrant_api_key
-                kwargs["https"] = True
-            self._client = AsyncQdrantClient(**kwargs)
+                self._client = AsyncQdrantClient(
+                    url=settings.qdrant_host,
+                    api_key=settings.qdrant_api_key,
+                )
+            else:
+                self._client = AsyncQdrantClient(
+                    host=settings.qdrant_host,
+                    port=settings.qdrant_port,
+                )
         return self._client
 
     def _embed(self, text: str) -> List[float]:

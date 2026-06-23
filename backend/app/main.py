@@ -29,11 +29,16 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     # 3. Verify Qdrant connection
-    qdrant_kwargs = {"host": settings.qdrant_host, "port": settings.qdrant_port}
     if settings.qdrant_api_key:
-        qdrant_kwargs["api_key"] = settings.qdrant_api_key
-        qdrant_kwargs["https"] = True
-    qdrant_client = AsyncQdrantClient(**qdrant_kwargs)
+        qdrant_client = AsyncQdrantClient(
+            url=settings.qdrant_host,
+            api_key=settings.qdrant_api_key,
+        )
+    else:
+        qdrant_client = AsyncQdrantClient(
+            host=settings.qdrant_host,
+            port=settings.qdrant_port,
+        )
     await qdrant_client.get_collections()
     app.state.qdrant = qdrant_client
     logger.info("Qdrant connected")
