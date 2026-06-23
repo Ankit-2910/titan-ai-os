@@ -1,5 +1,5 @@
 import io
-import PyPDF2
+import pypdf
 import docx
 from typing import Dict, Any
 import base64
@@ -8,10 +8,6 @@ from app.tools.registry import BaseTool
 
 
 class DocReaderTool(BaseTool):
-    """
-    Reads PDF and DOCX files and returns extracted text.
-    Accepts either a file path (server-side) or base64-encoded content.
-    """
 
     @property
     def name(self) -> str:
@@ -20,9 +16,7 @@ class DocReaderTool(BaseTool):
     @property
     def description(self) -> str:
         return (
-            "Extract and read text from PDF or DOCX documents. Use when the user "
-            "uploads a document and asks to read, summarize, analyze, or extract "
-            "information from it."
+            "Extract and read text from PDF or DOCX documents."
         )
 
     @property
@@ -38,7 +32,7 @@ class DocReaderTool(BaseTool):
             },
             "filename": {
                 "type": "string",
-                "description": "Original filename for reference",
+                "description": "Original filename",
             },
         }
 
@@ -60,12 +54,13 @@ class DocReaderTool(BaseTool):
                 return {
                     "success": False,
                     "result": None,
-                    "error": f"Unsupported file type: {file_type}. Supported: pdf, docx",
+                    "error": f"Unsupported: {file_type}",
                 }
 
-            # Truncate to 8000 chars to stay within token budget
             truncated = len(text) > 8000
-            text_out = text[:8000] + ("\n\n[Document truncated — showing first 8000 chars]" if truncated else "")
+            text_out = text[:8000] + (
+                "\n\n[Truncated]" if truncated else ""
+            )
 
             return {
                 "success": True,
@@ -83,11 +78,11 @@ class DocReaderTool(BaseTool):
             return {
                 "success": False,
                 "result": None,
-                "error": f"Failed to read document: {str(e)}",
+                "error": f"Failed: {str(e)}",
             }
 
     def _extract_pdf(self, file_obj: io.BytesIO) -> str:
-        reader = PyPDF2.PdfReader(file_obj)
+        reader = pypdf.PdfReader(file_obj)
         pages = []
         for i, page in enumerate(reader.pages):
             text = page.extract_text()
@@ -97,5 +92,7 @@ class DocReaderTool(BaseTool):
 
     def _extract_docx(self, file_obj: io.BytesIO) -> str:
         doc = docx.Document(file_obj)
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        paragraphs = [
+            p.text for p in doc.paragraphs if p.text.strip()
+        ]
         return "\n\n".join(paragraphs)
