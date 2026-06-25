@@ -27,7 +27,7 @@ export default function LoginPage() {
           ? await authApi.login(email, password)
           : await authApi.register(email, password, fullName || undefined);
       tokenStorage.set(tokens);
-      router.push("/dashboard");
+      router.push("/select");
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {

@@ -57,10 +57,9 @@ export default function DashboardPage() {
     } catch (_) {}
   }
 
-  async function newConversation() {
+  function newConversation() {
     setActiveConvId(null);
     setMessages([]);
-    await loadConversations();
   }
 
   async function selectConversation(conv: Conversation) {
@@ -113,7 +112,7 @@ export default function DashboardPage() {
           )
         );
       },
-     onDone: (convId) => {
+      onDone: (convId) => {
         setIsStreaming(false);
         setMessages((prev) =>
           prev.map((m) =>
@@ -122,8 +121,8 @@ export default function DashboardPage() {
         );
         if (!activeConvId) {
           setActiveConvId(convId);
+          loadConversations();
         }
-        loadConversations();
       },
       onError: (err) => {
         setIsStreaming(false);
