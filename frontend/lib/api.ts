@@ -36,12 +36,27 @@ export const tokenStorage = {
 
 export const domainStorage = {
   get: (): string =>
-    typeof window !== "undefined" ? localStorage.getItem("titan_domain") || "general" : "general",
+    typeof window !== "undefined"
+      ? localStorage.getItem("titan_domain") || "general"
+      : "general",
   set: (d: string) => localStorage.setItem("titan_domain", d),
   clear: () => localStorage.removeItem("titan_domain"),
 };
 
-async function apiFetch<T>(path: string, options: RequestInit = {}, withAuth = true): Promise<T> {
+// Auto-logout helper
+function handleUnauthorized() {
+  tokenStorage.clear();
+  domainStorage.clear();
+  if (typeof window !== "undefined") {
+    window.location.href = "/login";
+  }
+}
+
+async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {},
+  withAuth = true
+): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
@@ -51,6 +66,13 @@ async function apiFetch<T>(path: string, options: RequestInit = {}, withAuth = t
     if (token) headers["Authorization"] = `Bearer ${token}`;
   }
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+  // Auto logout on 401
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Session expired. Please login again.");
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
     throw new Error(err.detail || `HTTP ${res.status}`);
@@ -60,17 +82,26 @@ async function apiFetch<T>(path: string, options: RequestInit = {}, withAuth = t
 
 export const authApi = {
   register: (email: string, password: string, full_name?: string) =>
-    apiFetch<AuthTokens>("/auth/register", { method: "POST",
-      body: JSON.stringify({ email, password, full_name }) }, false),
+    apiFetch<AuthTokens>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password, full_name }),
+    }, false),
+
   login: (email: string, password: string) =>
-    apiFetch<AuthTokens>("/auth/login", { method: "POST",
-      body: JSON.stringify({ email, password }) }, false),
+    apiFetch<AuthTokens>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }, false),
+
   me: () => apiFetch<User>("/auth/me"),
+
   logout: async () => {
     const refresh_token = tokenStorage.getRefresh();
     if (refresh_token) {
-      await apiFetch("/auth/logout", { method: "POST",
-        body: JSON.stringify({ refresh_token }) }).catch(() => {});
+      await apiFetch("/auth/logout", {
+        method: "POST",
+        body: JSON.stringify({ refresh_token }),
+      }).catch(() => {});
     }
     tokenStorage.clear();
     domainStorage.clear();
@@ -89,7 +120,8 @@ export interface ChatStreamOptions {
 }
 
 export const chatApi = {
-  getDomains: () => apiFetch<{ domains: Domain[] }>("/chat/domains", {}, false),
+  getDomains: () =>
+    apiFetch<{ domains: Domain[] }>("/chat/domains", {}, false),
 
   getMessages: (id: string) =>
     apiFetch<{ messages: { role: string; content: string }[] }>(
@@ -102,7 +134,10 @@ export const chatApi = {
 
     fetch(`${API_BASE}/chat/`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
         message: opts.message,
         conversation_id: opts.conversation_id,
@@ -111,8 +146,14 @@ export const chatApi = {
       }),
       signal: controller.signal,
     }).then(async (res) => {
+      // Handle 401 in streaming too
+      if (res.status === 401) {
+        handleUnauthorized();
+        opts.onError("Session expired. Redirecting to login...");
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (!res.body) throw new Error("No body");
+      if (!res.body) throw new Error("No response body");
 
       let currentConvId = opts.conversation_id || "";
       const reader = res.body.getReader();
@@ -154,7 +195,8 @@ export const chatApi = {
     return () => controller.abort();
   },
 
-  listConversations: () => apiFetch<Conversation[]>("/chat/conversations"),
+  listConversations: () =>
+    apiFetch<Conversation[]>("/chat/conversations"),
 
   deleteConversation: (id: string) =>
     apiFetch(`/chat/conversations/${id}`, { method: "DELETE" }),
