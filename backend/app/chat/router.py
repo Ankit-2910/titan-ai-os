@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional, AsyncIterator
 import uuid
 import json
 import asyncio
+import base64
 
 from app.db import get_db
 from app.auth.models import User
@@ -17,12 +18,14 @@ from app.tools.registry import tool_registry
 from app.tools.web_search import WebSearchTool
 from app.tools.email_send import EmailSendTool
 from app.tools.doc_reader import DocReaderTool
+from app.tools.file_generator import FileGeneratorTool
 
 router = APIRouter()
 
 tool_registry.register(WebSearchTool())
 tool_registry.register(EmailSendTool())
 tool_registry.register(DocReaderTool())
+tool_registry.register(FileGeneratorTool())
 
 
 class ChatRequest(BaseModel):
@@ -36,7 +39,8 @@ class ChatRequest(BaseModel):
 
 
 def sse_event(data: str, event: str = "message") -> str:
-    return f"event: {event}\ndata: {data.replace(chr(10), chr(92)+'n')}\n\n"
+    escaped = data.replace("\n", "\\n")
+    return f"event: {event}\ndata: {escaped}\n\n"
 
 
 async def stream_agent_response(
@@ -48,17 +52,33 @@ async def stream_agent_response(
     domain: str = "general",
 ) -> AsyncIterator[str]:
     try:
-        yield sse_event(json.dumps({"type": "start", "conversation_id": conversation_id}), "control")
+        yield sse_event(
+            json.dumps({"type": "start", "conversation_id": conversation_id}),
+            "control"
+        )
         agent = get_agent_for_domain(domain)
         agent_iter = (
             agent.run_with_tools(user_id, conversation_id, message, db)
             if use_tools else
             agent.run(user_id, conversation_id, message, db)
         )
+
         async for chunk in agent_iter:
             if chunk:
-                yield sse_event(json.dumps({"type": "chunk", "text": chunk}))
+                # Check for file download signal
+                if "__FILE_DOWNLOAD__" in chunk:
+                    start = chunk.index("__FILE_DOWNLOAD__") + len("__FILE_DOWNLOAD__")
+                    end = chunk.index("__FILE_END__")
+                    file_json = chunk[start:end]
+                    text_before = chunk[:chunk.index("__FILE_DOWNLOAD__")]
+                    if text_before.strip():
+                        yield sse_event(json.dumps({"type": "chunk", "text": text_before}))
+                    yield sse_event(json.dumps({"type": "file", "payload": json.loads(file_json)}))
+                else:
+                    yield sse_event(json.dumps({"type": "chunk", "text": chunk}))
+
         yield sse_event(json.dumps({"type": "done"}), "control")
+
     except asyncio.CancelledError:
         return
     except Exception as e:
@@ -75,7 +95,9 @@ async def chat(
 
     if not body.conversation_id:
         first_words = " ".join(body.message.split()[:6])
-        conv = await memory_manager.create_conversation(db, user_id, title=f"{first_words}...")
+        conv = await memory_manager.create_conversation(
+            db, user_id, title=f"{first_words}..."
+        )
         conversation_id = str(conv.id)
     else:
         conversation_id = body.conversation_id
@@ -92,12 +114,20 @@ async def chat(
             extracted = doc_result["result"]["text"]
             fname = doc_result["result"]["filename"]
             message = f"{body.message}\n\n[Attached: {fname}]\n{extracted}"
-            await memory_manager.store_knowledge(user_id, extracted, doc_type="document", source=fname)
+            await memory_manager.store_knowledge(
+                user_id, extracted, doc_type="document", source=fname
+            )
 
     return StreamingResponse(
-        stream_agent_response(user_id, conversation_id, message, db, body.use_tools, body.domain),
+        stream_agent_response(
+            user_id, conversation_id, message, db, body.use_tools, body.domain
+        ),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Conversation-Id": conversation_id},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "X-Conversation-Id": conversation_id,
+        },
     )
 
 
@@ -122,14 +152,14 @@ async def get_messages(
         )
     )
     if not conv.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Conversation not found")
+        raise HTTPException(status_code=404, detail="Not found")
 
-    # Try Redis first (active session)
-    session_msgs = await memory_manager.get_session_messages(str(current_user.id), conversation_id)
+    session_msgs = await memory_manager.get_session_messages(
+        str(current_user.id), conversation_id
+    )
     if session_msgs:
         return {"messages": session_msgs}
 
-    # Fall back to PostgreSQL
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == uuid.UUID(conversation_id))
@@ -155,8 +185,12 @@ async def list_conversations(
         .limit(50)
     )
     return [
-        {"id": str(c.id), "title": c.title,
-         "created_at": c.created_at.isoformat(), "updated_at": c.updated_at.isoformat()}
+        {
+            "id": str(c.id),
+            "title": c.title,
+            "created_at": c.created_at.isoformat(),
+            "updated_at": c.updated_at.isoformat(),
+        }
         for c in result.scalars().all()
     ]
 
@@ -180,7 +214,11 @@ async def delete_conversation(
     if not c:
         raise HTTPException(status_code=404, detail="Not found")
 
-    await db.execute(sql_delete(Message).where(Message.conversation_id == uuid.UUID(conversation_id)))
+    await db.execute(
+        sql_delete(Message).where(
+            Message.conversation_id == uuid.UUID(conversation_id)
+        )
+    )
     await db.delete(c)
     await db.commit()
     await memory_manager.clear_session(str(current_user.id), conversation_id)
