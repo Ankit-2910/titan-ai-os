@@ -1,8 +1,8 @@
 """
 TITAN LLM Router — Multi-Model Fallback System
 Primary: gemini-2.5-flash
-Fallback 1: gemini-1.5-flash  
-Fallback 2: gemini-1.5-pro
+Fallback 1: gemini-2.5-flash-lite
+Fallback 2: gemini-2.0-flash
 No thinking mode — works on all environments guaranteed.
 """
 import json
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # Model cascade — if primary fails, next one takes over automatically
 MODEL_CASCADE = [
     "gemini-2.5-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
 ]
 
 
@@ -74,21 +74,27 @@ async def stream_response(
     )
 
     last_error = None
+    yielded_any = False
     for model_name in MODEL_CASCADE:
         try:
-            response = client.models.generate_content_stream(
+            response = await client.aio.models.generate_content_stream(
                 model=model_name,
                 contents=contents,
                 config=config,
             )
-            for chunk in response:
+            async for chunk in response:
                 if chunk.text:
+                    yielded_any = True
                     yield chunk.text
             return  # Success — stop trying other models
 
         except Exception as e:
             last_error = e
             logger.warning(f"Model {model_name} failed: {e} — trying next model")
+            if yielded_any:
+                # Partial response already streamed to the user;
+                # retrying would duplicate it from the start.
+                break
             continue
 
     # All models failed
@@ -140,7 +146,7 @@ JSON response:"""
     client = _get_client()
 
     # Try models for tool decision — use fastest first
-    for model_name in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+    for model_name in ["gemini-2.5-flash", "gemini-2.5-flash-lite"]:
         try:
             config = types.GenerateContentConfig(
                 max_output_tokens=2048,
@@ -148,7 +154,7 @@ JSON response:"""
                 response_mime_type="application/json",
             )
 
-            response = client.models.generate_content(
+            response = await client.aio.models.generate_content(
                 model=model_name,
                 contents=[types.Content(
                     role="user",

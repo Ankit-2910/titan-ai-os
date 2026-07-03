@@ -1,22 +1,32 @@
+import logging
+import math
+import uuid
+import hashlib
+from typing import List, Optional, Dict, Any
+
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct, Filter,
-    FieldCondition, MatchValue
+    FieldCondition, MatchValue, PayloadSchemaType
 )
-from typing import List, Optional, Dict, Any
-import uuid
-import hashlib
+from google import genai
+from google.genai import types as genai_types
 
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 COLLECTION_NAME = "titan_knowledge"
 VECTOR_SIZE = 384
+EMBED_MODEL = "gemini-embedding-001"
 
 
 class SemanticMemory:
 
     def __init__(self):
         self._client: Optional[AsyncQdrantClient] = None
+        self._genai_client: Optional[genai.Client] = None
+        self._collection_ready = False
 
     async def _get_client(self) -> AsyncQdrantClient:
         if self._client is None:
@@ -32,15 +42,26 @@ class SemanticMemory:
                 )
         return self._client
 
-    def _embed(self, text: str) -> List[float]:
-        vector = []
-        for i in range(VECTOR_SIZE):
-            h = hashlib.sha256(
-                f"{i}:{text[:100]}".encode()
-            ).digest()
-            val = (h[i % 32] / 255.0) * 2 - 1
-            vector.append(val)
-        return vector
+    def _get_genai_client(self) -> genai.Client:
+        if self._genai_client is None:
+            self._genai_client = genai.Client(api_key=settings.gemini_api_key)
+        return self._genai_client
+
+    async def _embed(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:
+        """Real semantic embedding via Gemini, truncated to VECTOR_SIZE and re-normalized."""
+        client = self._get_genai_client()
+        result = await client.aio.models.embed_content(
+            model=EMBED_MODEL,
+            contents=text[:8000],
+            config=genai_types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=VECTOR_SIZE,
+            ),
+        )
+        vector = list(result.embeddings[0].values)
+        # Truncated Gemini embeddings are not unit-length; normalize for cosine distance
+        norm = math.sqrt(sum(v * v for v in vector)) or 1.0
+        return [v / norm for v in vector]
 
     def _make_point_id(self, user_id: str, content: str) -> str:
         h = hashlib.sha256(
@@ -49,6 +70,8 @@ class SemanticMemory:
         return str(uuid.UUID(h[:32]))
 
     async def ensure_collection(self):
+        if self._collection_ready:
+            return
         try:
             client = await self._get_client()
             collections = await client.get_collections()
@@ -61,8 +84,19 @@ class SemanticMemory:
                         distance=Distance.COSINE
                     ),
                 )
-        except Exception:
-            pass
+            # Qdrant Cloud requires payload indexes for filtered fields
+            for field in ("user_id", "doc_type"):
+                try:
+                    await client.create_payload_index(
+                        collection_name=COLLECTION_NAME,
+                        field_name=field,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception:
+                    pass  # index already exists
+            self._collection_ready = True
+        except Exception as e:
+            logger.warning(f"Qdrant ensure_collection failed: {e}")
 
     async def store(self, user_id: str, content: str,
                     doc_type: str = "general",
@@ -71,7 +105,7 @@ class SemanticMemory:
         try:
             await self.ensure_collection()
             client = await self._get_client()
-            vector = self._embed(content)
+            vector = await self._embed(content, task_type="RETRIEVAL_DOCUMENT")
             point_id = self._make_point_id(user_id, content)
             payload = {
                 "user_id": user_id,
@@ -89,7 +123,8 @@ class SemanticMemory:
                 )],
             )
             return point_id
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Semantic store failed: {e}")
             return None
 
     async def search(self, user_id: str, query: str,
@@ -98,7 +133,7 @@ class SemanticMemory:
         try:
             await self.ensure_collection()
             client = await self._get_client()
-            query_vector = self._embed(query)
+            query_vector = await self._embed(query, task_type="RETRIEVAL_QUERY")
             must_conditions = [
                 FieldCondition(
                     key="user_id",
@@ -129,11 +164,13 @@ class SemanticMemory:
                 }
                 for r in results
             ]
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Semantic search failed: {e}")
             return []
 
     async def delete_by_user(self, user_id: str):
         try:
+            await self.ensure_collection()
             client = await self._get_client()
             await client.delete(
                 collection_name=COLLECTION_NAME,
@@ -144,8 +181,8 @@ class SemanticMemory:
                     )]
                 ),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Semantic delete failed: {e}")
 
 
 semantic_memory = SemanticMemory()

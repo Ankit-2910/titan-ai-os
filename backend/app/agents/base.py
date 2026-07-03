@@ -34,13 +34,21 @@ class BaseAgent(ABC):
 
     async def _save_message(self, db: AsyncSession, conversation_id: str, role: str, content: str):
         try:
-            from app.memory.long_term import Message
+            from datetime import datetime, timezone
+            from sqlalchemy import update
+            from app.memory.long_term import Message, Conversation
             msg = Message(
                 conversation_id=_uuid.UUID(conversation_id),
                 role=role,
                 content=content,
             )
             db.add(msg)
+            # Keep the conversation list sorted by real activity
+            await db.execute(
+                update(Conversation)
+                .where(Conversation.id == _uuid.UUID(conversation_id))
+                .values(updated_at=datetime.now(timezone.utc))
+            )
             await db.commit()
         except Exception as e:
             logger.warning(f"Archive failed: {e}")
