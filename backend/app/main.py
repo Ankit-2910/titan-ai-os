@@ -74,7 +74,7 @@ app.add_middleware(
 
 
 # ─── Health Check ─────────────────────────────────────────────────────────────
-@app.get("/health", tags=["System"])
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["System"])
 async def health_check():
     """Returns system health status for all connected services."""
     checks = {}
@@ -117,7 +117,7 @@ async def health_check():
     )
 
 
-@app.get("/", tags=["System"])
+@app.api_route("/", methods=["GET", "HEAD"], tags=["System"])
 async def root():
     return {"message": "TITAN AI OS API is running", "docs": "/docs"}
 
